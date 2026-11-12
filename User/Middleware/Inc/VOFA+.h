@@ -19,22 +19,7 @@
 
 /* ==================== 对外通用 API ==================== */
 void VOFA_Plus_Init(void);
-
-/**
- * @brief 通用多通道浮点数据打包函数
- * @param channels: 浮点数据数组指针（不论是欧拉角还是电机转速，拼成数组传进来即可）
- * @param ch_num:   通道数量（float 元素个数）
- * @param send_buf: 输出字节缓冲区
- * @param buf_len:  缓冲区最大长度
- * @retval 实际打包的字节长度，失败返回 0
- */
 uint16_t VOFA_Plus_PackData(const float *channels, uint8_t ch_num, uint8_t *send_buf, uint16_t buf_len);
-
-/**
- * @brief 通用多通道数据发送函数
- * @param channels: 浮点数据数组指针
- * @param ch_num:   通道数量
- */
 void VOFA_Plus_SendData(const float *channels, uint8_t ch_num);
 
 #else

@@ -15,6 +15,11 @@
 
 #include "Filter.h"
 
+LPF_Filter_t Filter_LeftMotor;   // 左轮编码器滤波器
+LPF_Filter_t Filter_RightMotor;  // 右轮编码器滤波器
+LPF_Filter_t Filter_GyroY;       // MPU6050 直立环角速度滤波器
+LPF_Filter_t Filter_AccelX;      // MPU6050 加速度计滤波器
+
 /**
   * @brief  直接系数 Alpha 初始化滤波器
   * @param  filter: 滤波器实例指针
@@ -102,4 +107,19 @@ void F_Reset(LPF_Filter_t *filter)
     filter->last_raw = 0.0f;
     filter->output = 0.0f;
     filter->is_first = 1;
+}
+
+void Balance_Car_Filter_Init(void)
+{
+    // 左右编码器：沿用你调好的参数，alpha = 0.3，限幅阈值 = 200 RPM
+    F_Init_Alpha(&Filter_LeftMotor,  0.3f, 200.0f);
+    F_Init_Alpha(&Filter_RightMotor, 0.3f, 200.0f);
+
+    // MPU6050 陀螺仪 Y 轴（负责直立环 D 项阻尼）：
+    // 对延迟极其敏感！假设 5ms(0.005s) 采样一次，设置截止频率为 30Hz，不设限幅(0.0f)
+    F_Init_Freq(&Filter_GyroY, 30.0f, 0.005f, 0.0f);
+
+    // MPU6050 加速度计 X 轴（车体震动噪声极大）：
+    // 需要重度滤波，5ms 采样下设置截止频率 5Hz，压制车轮齿轮震动传上来的高频毛刺
+    F_Init_Freq(&Filter_AccelX, 5.0f, 0.005f, 0.0f);
 }

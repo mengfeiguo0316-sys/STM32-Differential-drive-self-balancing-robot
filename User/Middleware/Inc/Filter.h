@@ -32,4 +32,6 @@ float F_Update(LPF_Filter_t *filter, float raw_input);
 // 状态复位函数：小车倒地保护停机再扶起时，清空历史记忆
 void F_Reset(LPF_Filter_t *filter);
 
-#endif /* __LPF_FILTER_H */
+void Balance_Car_Filter_Init(void);
+
+#endif /* FILTER_H */

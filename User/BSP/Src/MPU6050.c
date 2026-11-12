@@ -125,8 +125,6 @@ static void MPU6050_ReadRawData(int16_t *accel, int16_t *gyro)
 
 /**
  * @brief  获取 MPU6050 转换后的真实物理量（单位：g 和 °/s）
- * @param  accel: 存储 3 轴加速度的 float 数组 (长度至少为 3)
- * @param  gyro:  存储 3 轴角速度的 float 数组 (长度至少为 3)
  */
 void MPU6050_GetPhysical(void)
 {
@@ -156,4 +154,15 @@ void MPU6050_GetPhysical(void)
     mpu6050_data.gx = ((float)raw_gx - mpu6050_data.Gyro_Offset_X) / 16.4f;
     mpu6050_data.gy = ((float)raw_gy - mpu6050_data.Gyro_Offset_Y) / 16.4f;
     mpu6050_data.gz = ((float)raw_gz - mpu6050_data.Gyro_Offset_Z) / 16.4f;
+}
+
+MPU6050_DebugData_t MPU6050_GetDebugData(void)
+{
+	MPU6050_DebugData_t data;
+	
+	data.pitch=mpu6050_data.pitch;
+	data.row=mpu6050_data.row;
+	data.yaw=mpu6050_data.yaw;
+
+	return data;
 }
