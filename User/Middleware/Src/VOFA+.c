@@ -32,6 +32,14 @@ void VOFA_Plus_Init(void)
     memset(vofa_send_buf, 0, sizeof(vofa_send_buf));
 }
 
+/**
+ * @brief 通用多通道浮点数据打包函数
+ * @param channels: 浮点数据数组指针（不论是欧拉角还是电机转速，拼成数组传进来即可）
+ * @param ch_num:   通道数量（float 元素个数）
+ * @param send_buf: 输出字节缓冲区
+ * @param buf_len:  缓冲区最大长度
+ * @retval 实际打包的字节长度，失败返回 0
+ */
 uint16_t VOFA_Plus_PackData(const float *channels, uint8_t ch_num, uint8_t *send_buf, uint16_t buf_len)
 {
     if (channels == NULL || send_buf == NULL || ch_num == 0 || ch_num > VOFA_MAX_CHANNELS)
@@ -77,6 +85,11 @@ uint16_t VOFA_Plus_PackData(const float *channels, uint8_t ch_num, uint8_t *send
 #endif
 }
 
+/**
+ * @brief 通用多通道数据发送函数
+ * @param channels: 浮点数据数组指针
+ * @param ch_num:   通道数量
+ */
 void VOFA_Plus_SendData(const float *channels, uint8_t ch_num)
 {
     uint16_t data_len = VOFA_Plus_PackData(channels, ch_num, vofa_send_buf, VOFA_SEND_BUF_MAX_LEN);
@@ -85,8 +98,7 @@ void VOFA_Plus_SendData(const float *channels, uint8_t ch_num)
         return;
     }
 
-    // 阻塞发送（若开启了串口 DMA，可改为 HAL_UART_Transmit_DMA(&VOFA_UART_HANDLE, vofa_send_buf, data_len);）
-    HAL_UART_Transmit(&VOFA_UART_HANDLE, vofa_send_buf, data_len, 10);
+    HAL_UART_Transmit_DMA(&VOFA_UART_HANDLE, vofa_send_buf, data_len);
 }
 
 #endif /* VOFA_PLUS_ENABLE */

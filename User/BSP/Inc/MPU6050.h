@@ -15,9 +15,17 @@ typedef struct
 	int16_t Gyro_Offset_Y;
 	int16_t Gyro_Offset_Z;// 零偏全局变量（供后续姿态解算减去偏置）
 
+	float yaw;
+	float pitch;
+	float row;//互补滤波融合欧拉角
+	
+	float yaw_a;
+	float pitch_a;
+	float row_a;//加速度解算欧拉角
+
     float yaw_g;
 	float pitch_g;
-	float row_g;//互补滤波融合欧拉角
+	float row_g;//陀螺仪解算欧拉角
 
 }MPU6050_DebugData_t;
 
@@ -25,7 +33,7 @@ extern MPU6050_DebugData_t mpu6050_data;
 
 uint8_t MPU6050_Init(void);
 void MPU6050_GetPhysical(void);
-
+MPU6050_DebugData_t MPU6050_GetDebugData(void);
 #endif
 
 
