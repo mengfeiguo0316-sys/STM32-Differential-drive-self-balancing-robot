@@ -28,11 +28,53 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 project(${CMAKE_PROJECT_NAME})
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
-# Enable CMake support for ASM and C languages
+# Enable CMake support for ASM, C and C++ languages
 enable_language(C ASM)
+# 如果 User/ 下存在 C++ 源文件，自动启用 C++ 支持
+file(GLOB_RECURSE _USER_CXX_CHECK CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.cxx
+)
+if(_USER_CXX_CHECK)
+    enable_language(CXX)
+endif()
+
+# ============================================================================
+# 用户代码（User/ 目录）：自动收集，无需手动维护本文件
+# 新增/删除 User/ 下的文件后，CMake 会自动重新配置（CONFIGURE_DEPENDS）
+# ============================================================================
+
+# 自动收集 User/ 下所有源文件
+file(GLOB_RECURSE USER_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.s
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.S
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.cxx
+)
+list(REMOVE_DUPLICATES USER_SOURCES)
+
+# 自动收集 User/ 下所有头文件所在目录作为 include 路径
+file(GLOB_RECURSE USER_HEADERS CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/User/*.hpp
+)
+set(USER_INCLUDE_DIRS "")
+foreach(_header ${USER_HEADERS})
+    get_filename_component(_header_dir "${_header}" DIRECTORY)
+    list(APPEND USER_INCLUDE_DIRS "${_header_dir}")
+endforeach()
+list(REMOVE_DUPLICATES USER_INCLUDE_DIRS)
 
 # Create an executable object type
-add_executable(${CMAKE_PROJECT_NAME})
+add_executable(${CMAKE_PROJECT_NAME}
+    ${USER_SOURCES}
+    ${USER_HEADERS}
+    User/Middleware/Inc/VOFA+.h
+    User/Middleware/Inc/PID.h
+)
 
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
@@ -49,7 +91,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-    # Add user defined include paths
+    ${USER_INCLUDE_DIRS}
 )
 
 # Add project symbols (macros)
