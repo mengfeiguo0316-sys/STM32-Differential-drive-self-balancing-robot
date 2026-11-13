@@ -26,7 +26,7 @@
 #define GYRO_CONFIG         0x1B    // 陀螺仪量程配置
 #define ACCEL_CONFIG        0x1C    // 加速度计量程配置
 
-MPU6050_DebugData_t mpu6050_data;
+MPU6050_Data_t mpu6050_data;
 
 //函数声明
 static void MPU6050_Calibrate(void);
@@ -156,13 +156,12 @@ void MPU6050_GetPhysical(void)
     mpu6050_data.gz = ((float)raw_gz - mpu6050_data.Gyro_Offset_Z) / 16.4f;
 }
 
-MPU6050_DebugData_t MPU6050_GetDebugData(void)
+float * MPU6050_GetDebugData(void)
 {
-	MPU6050_DebugData_t data;
-	
-	data.pitch=mpu6050_data.pitch;
-	data.row=mpu6050_data.row;
-	data.yaw=mpu6050_data.yaw;
+    float debug_data[3];
+	debug_data[0] = mpu6050_data.pitch;
+	debug_data[1] = mpu6050_data.row;
+	debug_data[2] = mpu6050_data.yaw;
 
-	return data;
+	return debug_data;
 }

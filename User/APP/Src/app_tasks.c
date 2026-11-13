@@ -19,10 +19,11 @@
 #include "fast_math.h"
 #include"Delay.h"
 #include"VOFA+.h"
+#include"Tasks.h"
 
 static void Get_Angle(void);
 
-/************************************************软实时任务 ************************************************/
+/************************************************软实时任务 主循环轮询************************************************/
 
 void app_Tasks_Init(void)
 {
@@ -34,14 +35,14 @@ void app_Tasks_Init(void)
 
 void app_task_VOFA_Plus(void)
 {
-	MPU6050_GetDebugData();
-	//VOFA_Plus_SendData(const float *channels, uint8_t ch_num);
-	
+	PERIODIC(MPU6050_Debug, 5);
+	float *channels=MPU6050_GetDebugData();
+	VOFA_Plus_SendData(channels, 3);
 }
 
 
 
-/************************************************硬实时任务 ************************************************/
+/************************************************硬实时任务 中断处理************************************************/
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) 
 {

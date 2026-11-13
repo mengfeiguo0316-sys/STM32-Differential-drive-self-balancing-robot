@@ -27,13 +27,13 @@ typedef struct
 	float pitch_g;
 	float row_g;//陀螺仪解算欧拉角
 
-}MPU6050_DebugData_t;
+}MPU6050_Data_t;
 
-extern MPU6050_DebugData_t mpu6050_data;
+extern MPU6050_Data_t mpu6050_data;
 
 uint8_t MPU6050_Init(void);
 void MPU6050_GetPhysical(void);
-MPU6050_DebugData_t MPU6050_GetDebugData(void);
+float * MPU6050_GetDebugData(void);
 #endif
 
 
