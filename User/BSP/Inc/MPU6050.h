@@ -33,7 +33,7 @@ extern MPU6050_Data_t mpu6050_data;
 
 uint8_t MPU6050_Init(void);
 void MPU6050_GetPhysical(void);
-float * MPU6050_GetDebugData(void);
+MPU6050_Data_t  MPU6050_GetDebugData(void);
 #endif
 
 

@@ -10,4 +10,7 @@ uint8_t SI2C_WriteBytes(uint8_t addr, uint8_t reg, uint8_t *data, uint8_t length
 uint8_t SI2C_writeBit(uint8_t addr, uint8_t reg, uint8_t location, uint8_t level);
 uint8_t SI2C_writeBits(uint8_t addr, uint8_t reg, uint8_t bitStart, uint8_t length, uint8_t data);
 
+/* 总线被从机拉死时，发 9 个时钟恢复 */
+void SI2C_BusRecover(void);
+
 #endif

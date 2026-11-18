@@ -25,6 +25,8 @@
 #define CONFIG              0x1A    // 低通滤波配置 (DLPF)
 #define GYRO_CONFIG         0x1B    // 陀螺仪量程配置
 #define ACCEL_CONFIG        0x1C    // 加速度计量程配置
+#define INT_PIN_CFG         0x37    // 中断引脚配置寄存器
+#define INT_ENABLE          0x38    // 中断使能寄存器
 
 MPU6050_Data_t mpu6050_data;
 
@@ -32,29 +34,31 @@ MPU6050_Data_t mpu6050_data;
 static void MPU6050_Calibrate(void);
 static void MPU6050_ReadRawData(int16_t *accel, int16_t *gyro);
 
-
 /**
- * @brief  初始化 MPU6050，配置采样率，滤波器，陀螺仪，加速度计量程
- * @param  无
+ * @brief  初始化 MPU6050，配置采样率(200Hz)、滤波器、量程，执行零偏校准并开启 INT 中断
+ * @retval 1: 初始化成功, 0: 通信或配置失败
  */
 uint8_t MPU6050_Init(void)
 {
     uint8_t data;
 
+    SI2C_BusRecover();                  // 防止上次复位时总线被从机拉死
+
     if (SI2C_Read(MPU6050_ADDR, WHO_AM_I, &data))
         return 0;
-    
-    // WHO_AM_I 寄存器出厂默认固定值就是 0x68
-    if (data != 0x68)
+
+    /* WHO_AM_I：MPU6050/MPU6000=0x68，MPU6500=0x70，MPU9250=0x71，MPU9255=0x73
+       市售大量 "MPU6050" 模块实际贴的是 MPU6500，基础寄存器与量程换算完全兼容 */
+    if (data != 0x68 && data != 0x70 && data != 0x71 && data != 0x73)
         return 0;
 
     if (SI2C_Write(MPU6050_ADDR, PWR_MGMT_1, 0x01))
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, SMPLRT_DIV, 0x00))
+    if (SI2C_Write(MPU6050_ADDR, CONFIG, 0x03))
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, CONFIG, 0x00))
+    if (SI2C_Write(MPU6050_ADDR, SMPLRT_DIV, 0x04))
         return 0;
 
     if (SI2C_Write(MPU6050_ADDR, GYRO_CONFIG, 0x18))
@@ -62,10 +66,16 @@ uint8_t MPU6050_Init(void)
 
     if (SI2C_Write(MPU6050_ADDR, ACCEL_CONFIG, 0x00))
         return 0;
-        
+
     HAL_Delay(50);
 
-    MPU6050_Calibrate(); // 校准陀螺仪零偏
+    MPU6050_Calibrate();
+
+    if (SI2C_Write(MPU6050_ADDR, INT_PIN_CFG, 0x10))
+        return 0;
+
+    if (SI2C_Write(MPU6050_ADDR, INT_ENABLE, 0x01))
+        return 0;
 
     return 1;
 }
@@ -156,12 +166,12 @@ void MPU6050_GetPhysical(void)
     mpu6050_data.gz = ((float)raw_gz - mpu6050_data.Gyro_Offset_Z) / 16.4f;
 }
 
-float * MPU6050_GetDebugData(void)
+MPU6050_Data_t  MPU6050_GetDebugData(void)
 {
-    float debug_data[3];
-	debug_data[0] = mpu6050_data.pitch;
-	debug_data[1] = mpu6050_data.row;
-	debug_data[2] = mpu6050_data.yaw;
+    static MPU6050_Data_t debug_data;
+    debug_data.pitch = mpu6050_data.pitch;
+    debug_data.row = mpu6050_data.row;
+    debug_data.yaw = mpu6050_data.yaw;
 
-	return debug_data;
+    return debug_data;
 }

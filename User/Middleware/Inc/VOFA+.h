@@ -1,33 +1,35 @@
 #ifndef __VOFA_H
 #define __VOFA_H
 
+#include "MPU6050.h"
 #include <stdint.h>
 
+
 /* ==================== 核心宏开关 ==================== */
-// 开启/关闭 VOFA+ 调试功能：调试时置 1，量产时置 0
+// 开启/关闭VOFA+调试功能，调试时置1，量产时置0
 #define VOFA_PLUS_ENABLE        1
-
-// 协议选择：1 = FireWater (字符串格式，直观易读)
-//           2 = JustFloat (二进制浮点流 + 帧尾，高频发送效率最高，推荐！)
-#define VOFA_PROTOCOL           1
-
-// 支持的最大浮点通道数与发送缓冲区大小
-#define VOFA_MAX_CHANNELS       16
-#define VOFA_SEND_BUF_MAX_LEN   128
-
 #if VOFA_PLUS_ENABLE
 
-/* ==================== 对外通用 API ==================== */
+/* ==================== 硬件配置（根据工程实际修改） ==================== */
+//  VOFA协议选择：1=FireWater（字符串格式，易调试），2=RawData
+#define VOFA_PROTOCOL           1  // 默认选FireWater，设为2可切换为RawData（若未实现）
+// 3. 发送缓冲区最大长度，单包数据量大时建议>=32字节
+#define VOFA_SEND_BUF_MAX_LEN   128
+
+// 重命名MPU6050_DebugData_t为VOFA_Data_t，避免重复定义
+typedef MPU6050_Data_t VOFA_Data_t;
+
+/* ==================== 函数声明 ==================== */
 void VOFA_Plus_Init(void);
-uint16_t VOFA_Plus_PackData(const float *channels, uint8_t ch_num, uint8_t *send_buf, uint16_t buf_len);
-void VOFA_Plus_SendData(const float *channels, uint8_t ch_num);
-
+void VOFA_Plus_SendData(VOFA_Data_t *data);
+void VOFA_Plus_SendMPU6050Data(void);
 #else
-/* ==================== 空实现（关闭宏时零开销） ==================== */
-#define VOFA_Plus_Init()                                           ((void)0)
-#define VOFA_Plus_PackData(channels, ch_num, send_buf, buf_len)    ((uint16_t)0)
-#define VOFA_Plus_SendData(channels, ch_num)                       ((void)0)
+/* ==================== 空实现（当VOFA+功能关闭时防止编译报错） ==================== */
+#define VOFA_Plus_Init()                                  ((void)0)
+#define VOFA_Plus_PackData(vofa_data, send_buf, buf_len)  ((uint16_t)0)
+#define VOFA_Plus_SendData(data)                          ((void)0)
+#define VOFA_Plus_SendMPU6050Data()                       ((void)0)
 
-#endif /* VOFA_PLUS_ENABLE */
+#endif /* VOFA_PLUS_ENABLE */ 
 
 #endif /* __VOFA_H */

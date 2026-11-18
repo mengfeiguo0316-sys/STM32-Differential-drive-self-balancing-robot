@@ -6,9 +6,9 @@
       "type": "shell",
       "command": "openocd",
       "args": [
-        "-f", "interface/stlink.cfg",
-        "-f", "target/stm32f1x.cfg",
-        "-c", "program build/Release/Balance_car.elf verify reset exit"
+        "-f", "interface/stlink.cfg",       // 已切换为 ST-Link 接口
+        "-f", "target/stm32f1x.cfg",          // 目标芯片保持 stm32f4x.cfg
+        "-c", "program build/Release/Balance_car.elf verify reset exit" // 根据实际生成的elf文件名调整
       ],
       "options": {
         "cwd": "${workspaceFolder}"

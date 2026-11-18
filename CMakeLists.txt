@@ -99,6 +99,10 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
 )
 
+# 开启 newlib-nano 的浮点 printf 支持，否则 snprintf/printf 的 "%f" 不输出任何字符
+# （VOFA+ FireWater 的 "%.1f" 会退化成只剩逗号，约增加 7KB Flash）
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE "-Wl,-u,_printf_float")
+
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 
