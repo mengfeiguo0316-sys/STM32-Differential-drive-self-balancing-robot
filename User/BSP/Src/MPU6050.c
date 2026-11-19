@@ -5,7 +5,7 @@
  * Phone     : 199 5063 9665
  *
  * Version   : V1.0.0
- * Updated   : 2026-11-12
+ * Updated   : 2026-11-18
  *
  * Description:MPU6050 传感器驱动，负责初始化及原始/物理量读取
  *   

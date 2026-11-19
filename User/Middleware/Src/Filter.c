@@ -1,104 +1,70 @@
 /************************************************
  * Developer : Gonk
  * Version   : V1.3.0
- * Updated   : 2026-11-14
- * Description: 编码器低通限幅滤波 + MPU6050 互补滤波融合
+ * Updated   : 2026-11-18
+ * Description: 滤波器模块，负责对传感器数据进行滤波处理，提供平滑的输出数据
  ************************************************/
 
 #include "Filter.h"
 #include "fast_math.h"
 
-/* 编码器滤波器 */
-LPF_Filter_t Filter_LeftMotor;
-LPF_Filter_t Filter_RightMotor;
+// 全局滤波器实例
+LPF_Filter_t lpf_ax;
+LPF_Filter_t lpf_ay;
+LPF_Filter_t lpf_az;
 
-/* MPU6050 六轴低通滤波器 */
-LPF_Filter_t Filter_AccelX;
-LPF_Filter_t Filter_AccelY;
-LPF_Filter_t Filter_AccelZ;
-LPF_Filter_t Filter_GyroX;
-LPF_Filter_t Filter_GyroY;
-LPF_Filter_t Filter_GyroZ;
+CompFilter_t Pitch;
+CompFilter_t Roll;
 
-/* 姿态互补滤波器 */
-CompFilter_t Filter_Attitude;   // Pitch 俯仰角
-CompFilter_t Filter_Roll;       // Roll  横滚角
 
-void F_Init_Alpha(LPF_Filter_t *filter, float alpha, float max_step)
+/**
+ * @brief  一阶低通滤波器初始化函数
+ * @param filter 滤波器指针
+ * @param cutoff_freq_hz 截止频率 (Hz)
+ * @param sample_time_s 采样周期 (s)
+ */
+void F_Init_Freq(LPF_Filter_t *filter, float cutoff_freq_hz, float sample_time_s)
 {
-    if (alpha < 0.0f) alpha = 0.0f;
-    if (alpha > 1.0f) alpha = 1.0f;
+    //根据物理公式计算时间常数 RC 和滤波系数 alpha
+    float rc      = 1.0f / (2.0f * M_PI * cutoff_freq_hz);
+    filter->alpha = sample_time_s / (sample_time_s + rc);
 
-    filter->alpha    = alpha;
-    filter->max_step = (max_step > 0.0f) ? max_step : 0.0f;
-    filter->last_raw = 0.0f;
     filter->output   = 0.0f;
     filter->is_first = 1;
+    filter->max_step = 0.0f;
+    filter->last_raw = 0.0f;
     filter->err_cnt  = 0;
 }
 
-void F_Init_Freq(LPF_Filter_t *filter, float cutoff_freq_hz, float sample_time_s, float max_step)
-{
-    if (cutoff_freq_hz <= 0.0f || sample_time_s <= 0.0f) 
-    {
-        F_Init_Alpha(filter, 1.0f, max_step);
-        return;
-    }
-
-    float rc    = 1.0f / (2.0f * M_PI * cutoff_freq_hz);
-    float alpha = sample_time_s / (sample_time_s + rc);
-
-    F_Init_Alpha(filter, alpha, max_step);
-}
-
+/**
+ * @brief  一阶低通滤波器更新函数
+ * @param filter 滤波器指针
+ * @param raw_input 原始输入值
+ * @return 滤波后的输出值
+ */
 float F_Update(LPF_Filter_t *filter, float raw_input)
 {
-    if (filter->is_first) 
+    // 上电第一帧，直接让输出等于当前输入，避免从 0 开始缓慢爬升
+    if (filter->is_first)
     {
-        filter->last_raw = raw_input;
         filter->output   = raw_input;
         filter->is_first = 0;
-        filter->err_cnt  = 0;
         return filter->output;
     }
 
-    if (filter->max_step > 0.0f) 
-    {
-        float diff = raw_input - filter->last_raw;
-        if (diff < 0.0f) diff = -diff;
-        
-        if (diff > filter->max_step) 
-        {
-            filter->err_cnt++;
-            if (filter->err_cnt <= 3) // 连续3次内判为干扰毛刺，丢弃
-            {
-                raw_input = filter->last_raw;
-            }
-            else                      // 连续超过3次判为真实阶跃，放行防死锁
-            {
-                filter->err_cnt = 0;
-            }
-        }
-        else
-        {
-            filter->err_cnt = 0;
-        }
-    }
-    filter->last_raw = raw_input;
-
+    //一阶低通核心公式：新输出 = 旧输出 + alpha * (新输入 - 旧输出)
     filter->output += filter->alpha * (raw_input - filter->output);
+
     return filter->output;
 }
 
-void F_Reset(LPF_Filter_t *filter)
-{
-    filter->last_raw = 0.0f;
-    filter->output   = 0.0f;
-    filter->is_first = 1;
-    filter->err_cnt  = 0;
-}
-
-void CF_Init_Alpha(CompFilter_t *cf, float alpha, float dt)
+/**
+ * @brief  互补滤波器初始化函数
+ * @param filter 滤波器指针
+ * @param alpha 互补滤波器参数
+ * @param dt 采样周期
+ */
+void CF_Init(CompFilter_t *cf, float alpha, float dt)
 {
     if (alpha < 0.0f) alpha = 0.0f;
     if (alpha > 1.0f) alpha = 1.0f;
@@ -110,35 +76,30 @@ void CF_Init_Alpha(CompFilter_t *cf, float alpha, float dt)
     cf->is_first  = 1;
 }
 
-void CF_Init_Tau(CompFilter_t *cf, float tau_s, float dt)
-{
-    if (tau_s <= 0.0f || dt <= 0.0f)
-    {
-        CF_Init_Alpha(cf, 0.98f, 0.005f);
-        return;
-    }
-    float alpha = tau_s / (tau_s + dt);
-    CF_Init_Alpha(cf, alpha, dt);
-}
 
 /**
-  * @brief  互补滤波单轴融合 (传入已扣除零偏的 gyro_rate)
-  * @param  acc_horizontal: 水平轴加速度 (Pitch 传入 -ax，Roll 传入 ay)
-  * @param  acc_z: 垂直 Z 轴加速度
-  * @param  gyro_rate: 对应轴角速度 (deg/s)
-  */
-float CF_Update(CompFilter_t *cf, float acc_horizontal, float acc_z, float gyro_rate)
+ * @brief  一阶互补滤波单步融合
+ * @param  cf        : 互补滤波器实例指针
+ * @param  acc_hor   : 水平方向加速度 (算 Pitch 传 -ax，算 Roll 传 ay)
+ * @param  acc_z     : 垂直方向加速度 (az)
+ * @param  gyro_rate : 对应轴角速度 (deg/s，已扣除零偏)
+ * @retval 融合后的最优倾角 (deg)
+ */
+float CF_Update(CompFilter_t *cf, float acc_hor, float acc_z, float gyro_rate)
 {
-    if (acc_horizontal == 0.0f && acc_z == 0.0f)
+    // 1. 防止除零异常
+    if (acc_hor == 0.0f && acc_z == 0.0f)
     {
         return cf->angle;
     }
 
-    // 调用 fast_math 的 qatan2 快速反正切，大幅缩短 STM32F103 中断耗时
-    float accel_angle = qatan2(acc_horizontal, acc_z) * 57.29578f;
-    cf->gyro_rate     = gyro_rate;
+    // 2. 用加速度计解算静态倾角 (弧度转角度: 180 / PI ≈ 57.29578)
+    float accel_angle = qatan2(acc_hor, acc_z) * 57.29578f;
 
-    // 首次上电：直接对齐加速度计静态倾角，消除开机收敛抽搐
+    // 3. 保存当前角速度，供外部直立环 D 项直接读取
+    cf->gyro_rate = gyro_rate;
+
+    // 4. 上电第一帧：直接信任加速度计倾角，避免从 0° 缓慢爬升导致电机猛抽
     if (cf->is_first)
     {
         cf->angle    = accel_angle;
@@ -146,38 +107,9 @@ float CF_Update(CompFilter_t *cf, float acc_horizontal, float acc_z, float gyro_
         return cf->angle;
     }
 
-    // 一阶互补融合
+    // 5. 核心互补融合公式：短期动态信陀螺仪积分，长期基准靠加速度计拉回
     cf->angle = cf->alpha * (cf->angle + cf->gyro_rate * cf->dt)
               + (1.0f - cf->alpha) * accel_angle;
 
     return cf->angle;
-}
-
-void CF_Reset(CompFilter_t *cf)
-{
-    cf->angle     = 0.0f;
-    cf->gyro_rate = 0.0f;
-    cf->is_first  = 1;
-}
-
-void Balance_Car_Filter_Init(void)
-{
-    // 1. 左右编码器
-    F_Init_Alpha(&Filter_LeftMotor,  0.3f, 200.0f);
-    F_Init_Alpha(&Filter_RightMotor, 0.3f, 200.0f);
-
-    // 2. 加速度计三轴：5ms 采样下截止频率 8Hz，强力抑制电机/齿轮高频震动
-    F_Init_Freq(&Filter_AccelX, 8.0f, 0.005f, 0.0f);
-    F_Init_Freq(&Filter_AccelY, 8.0f, 0.005f, 0.0f);
-    F_Init_Freq(&Filter_AccelZ, 8.0f, 0.005f, 0.0f);
-
-    // 3. 陀螺仪三轴：5ms 采样下截止频率 35Hz，保留直立环 D 项快速响应
-    F_Init_Freq(&Filter_GyroX, 35.0f, 0.005f, 0.0f);
-    F_Init_Freq(&Filter_GyroY, 35.0f, 0.005f, 0.0f);
-    F_Init_Freq(&Filter_GyroZ, 35.0f, 0.005f, 0.0f);
-
-    // 4. 互补滤波器：时间常数 tau = 0.5s (5ms 下等效 alpha ≈ 0.9901)
-    //    若习惯你原来的 0.98f，可改为 CF_Init_Alpha(&Filter_Attitude, 0.98f, 0.005f);
-    CF_Init_Tau(&Filter_Attitude, 0.5f, 0.005f);
-    CF_Init_Tau(&Filter_Roll,     0.5f, 0.005f);
 }

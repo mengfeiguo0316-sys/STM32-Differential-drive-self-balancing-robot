@@ -5,7 +5,7 @@
  * Phone     : 199 5063 9665
  *
  * Version   : V1.0.0
- * Updated   : 2026-11-12
+ * Updated   : 2026-11-18
  *
  * Description:软件 I2C 总线驱动，支持单字节与多字节读写
  *   
@@ -17,9 +17,10 @@
 #include"Delay.h"
 
 /* 软件 I2C 实现核心机制：SCL 低电平期间切换 SDA，SCL 高电平期间保持并采样 SDA */
-// SDA 平时为推挽输出（无外接上拉时保证驱动能力），需要让从机接管总线时切换为上拉输入
+// SDA 引脚配置为推挽输出（无外接上拉时保证驱动能力），需要让从机接管总线时切换为上拉输入
 #define SDA_OUT()      do { GPIOB->CRH = (GPIOB->CRH & 0x0FFFFFFFu) | (0x3u << 28); } while (0)  /* PB15 推挽输出 50MHz */
 #define SDA_IN()       do { GPIOB->CRH = (GPIOB->CRH & 0x0FFFFFFFu) | (0x8u << 28); } while (0)  /* PB15 上拉输入，ODR=1 时上拉 */
+
 #define SDA_RELEASE()  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_SET)
 #define SDA_L()        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_RESET)
 #define SDA_READ()     HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_15)
