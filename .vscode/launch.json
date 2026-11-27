@@ -5,15 +5,14 @@
       "name": "Cortex Debug (ST-Link)",
       "type": "cortex-debug",
       "request": "launch",
-      "cwd": "${workspaceFolder}",
-      "executable": "${workspaceFolder}/build/Debug/Balance_car.elf",
-      
       "servertype": "openocd",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/Debug/Balance_car.elf", // 确保路径对应
+      //"executable": "${workspaceFolder}/build/Release/Balance_car.elf", // 确保路径对应
       "configFiles": [
-        "interface/stlink.cfg",          // 改为 ST-Link 驱动脚本
-        "target/stm32f1x.cfg"            // 芯片系列脚本不变
+        "interface/stlink.cfg",   // 切换为 stlink.cfg
+        "target/stm32f1x.cfg"     // STM32F1 芯片
       ],
-      
       "runToEntryPoint": "main",
       "showDevDebugOutput": "none"
     }

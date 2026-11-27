@@ -5,7 +5,7 @@
  * Phone     : 199 5063 9665
  *
  * Version   : V1.0.0
- * Updated   : 2026-11-12
+ * Updated   : 2026-11-18
  *
  * Description:MPU6050 传感器驱动，负责初始化及原始/物理量读取
  *   
@@ -15,6 +15,7 @@
 
 #include "MPU6050.h"
 #include "SI2C.h"
+#include "Filter.h"
 
 // 实际情况决定
 #define MPU6050_ADDR        0x68
@@ -25,47 +26,64 @@
 #define CONFIG              0x1A    // 低通滤波配置 (DLPF)
 #define GYRO_CONFIG         0x1B    // 陀螺仪量程配置
 #define ACCEL_CONFIG        0x1C    // 加速度计量程配置
+#define INT_PIN_CFG         0x37    // 中断引脚配置寄存器
+#define INT_ENABLE          0x38    // 中断使能寄存器
 
-MPU6050_DebugData_t mpu6050_data;
+MPU6050_Data_t mpu6050_data;
 
 //函数声明
 static void MPU6050_Calibrate(void);
 static void MPU6050_ReadRawData(int16_t *accel, int16_t *gyro);
 
-
 /**
- * @brief  初始化 MPU6050，配置采样率，滤波器，陀螺仪，加速度计量程
- * @param  无
+ * @brief  初始化 MPU6050，配置采样率(200Hz)、滤波器、量程，执行零偏校准并开启 INT 中断
+ * @retval 1: 初始化成功, 0: 通信或配置失败
  */
 uint8_t MPU6050_Init(void)
 {
     uint8_t data;
+    uint8_t dummy_buf[14];
+
+    SI2C_BusRecover();
 
     if (SI2C_Read(MPU6050_ADDR, WHO_AM_I, &data))
         return 0;
-    
-    // WHO_AM_I 寄存器出厂默认固定值就是 0x68
-    if (data != 0x68)
+
+    if (data != 0x68 && data != 0x70 && data != 0x71 && data != 0x73)
         return 0;
 
     if (SI2C_Write(MPU6050_ADDR, PWR_MGMT_1, 0x01))
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, SMPLRT_DIV, 0x00))
+    // 【新增1】热重启保护：先关闭 MPU6050 中断输出，防止校准期间干扰
+    if (SI2C_Write(MPU6050_ADDR, INT_ENABLE, 0x00))
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, CONFIG, 0x00))
+    if (SI2C_Write(MPU6050_ADDR, CONFIG, 0x03))       // 42Hz DLPF，基准 1kHz
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, GYRO_CONFIG, 0x18))
+    if (SI2C_Write(MPU6050_ADDR, SMPLRT_DIV, 0x04))   // 200Hz (5ms)
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, ACCEL_CONFIG, 0x00))
+    if (SI2C_Write(MPU6050_ADDR, GYRO_CONFIG, 0x18))  // ±2000°/s
         return 0;
-        
+
+    if (SI2C_Write(MPU6050_ADDR, ACCEL_CONFIG, 0x00)) // ±2g
+        return 0;
+
     HAL_Delay(50);
 
-    MPU6050_Calibrate(); // 校准陀螺仪零偏
+    MPU6050_Calibrate();      // 校准零偏
+    Filter_Init();    // 【新增2】初始化低通与互补滤波器（之前漏掉了！）
+
+    if (SI2C_Write(MPU6050_ADDR, INT_PIN_CFG, 0x10))  // 高电平脉冲，读操作清中断
+        return 0;
+
+    // 【新增3】在开启中断前，先读一次 0x3B 清除芯片内部残留的旧中断标志，确保 INT 引脚处于低电平！
+    SI2C_ReadBytes(MPU6050_ADDR, 0x3B, dummy_buf, 14);
+
+    if (SI2C_Write(MPU6050_ADDR, INT_ENABLE, 0x01))   // 正式开启 200Hz 中断
+        return 0;
 
     return 1;
 }
@@ -79,7 +97,7 @@ static void MPU6050_Calibrate(void)
     int32_t sum_gx = 0;
     int32_t sum_gy = 0;
     int32_t sum_gz = 0;
-    const uint16_t samples = 200; // 采集 200 次求平均
+    const uint16_t samples = 500; // 采集 500 次求平均
 
     int16_t temp_accel[3];
     int16_t temp_gyro[3];
@@ -156,13 +174,14 @@ void MPU6050_GetPhysical(void)
     mpu6050_data.gz = ((float)raw_gz - mpu6050_data.Gyro_Offset_Z) / 16.4f;
 }
 
-MPU6050_DebugData_t MPU6050_GetDebugData(void)
-{
-	MPU6050_DebugData_t data;
-	
-	data.pitch=mpu6050_data.pitch;
-	data.row=mpu6050_data.row;
-	data.yaw=mpu6050_data.yaw;
 
-	return data;
+
+MPU6050_Data_t  MPU6050_GetDebugData(void)
+{
+    static MPU6050_Data_t debug_data;
+    debug_data.pitch = mpu6050_data.pitch;
+    debug_data.row = mpu6050_data.row;
+    debug_data.yaw = mpu6050_data.yaw;
+
+    return debug_data;
 }

@@ -19,50 +19,72 @@
 #include "fast_math.h"
 #include"Delay.h"
 #include"VOFA+.h"
+#include"Tasks.h"
+#include "key.h"
+#include "led.h"
+#include "stm32f1xx_hal.h"
 
-static void Get_Angle(void);
+//函数声明
+static void MPU6050_GetAngle(void);
 
-/************************************************软实时任务 ************************************************/
-
+/************************************************ 应用任务初始化 ************************************************/
 void app_Tasks_Init(void)
 {
 	Delay_Init();
 	MPU6050_Init();
 	VOFA_Plus_Init();
-	Balance_Car_Filter_Init();
 }
 
+/************************************************软实时任务 主循环轮询************************************************/
 void app_task_VOFA_Plus(void)
 {
-	MPU6050_GetDebugData();
-	//VOFA_Plus_SendData(const float *channels, uint8_t ch_num);
-	
+	PERIODIC(MPU6050_Debug, 20);
+	VOFA_Plus_SendMPU6050Data();
+}
+
+void app_task_LED1_TOGGLE(void)
+{
+	PERIODIC(LED1_TOGGLE, 500);
+	BSP_LED_Toggle(LED1);
 }
 
 
-
-/************************************************硬实时任务 ************************************************/
+/************************************************硬实时任务 中断实时处理************************************************/
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) 
 {
-  if(GPIO_Pin==GPIO_PIN_9)
-  {
-	Get_Angle();//更新角度
-	
-  }
+    if (GPIO_Pin == GPIO_PIN_9)
+    {
+        MPU6050_GetAngle(); // 严格每 5ms 更新一次姿态角与角速度
+    }
 }
 
-static void Get_Angle(void)
-{
-    MPU6050_GetPhysical();  // 更新加速度与角速度物理量
 
-    // 加速度计解算角度
-    mpu6050_data.pitch_a = qatan2(-mpu6050_data.ax, mpu6050_data.az) * 57.29578f;
-    mpu6050_data.row_a   = qatan2( mpu6050_data.ay, mpu6050_data.az) * 57.29578f;
-    mpu6050_data.yaw_a   = 0.0f;
+/**
+ * @brief  更新MPU6050 融合后的姿态角（单位：°）和角速度（单位：°/s）
+ */
+/**
+ * @brief  更新 MPU6050 融合后的三轴姿态角（单位：°）和角速度（单位：°/s）
+ */
+void MPU6050_GetAngle(void)
+{
+    MPU6050_GetPhysical();
+
+    //加速度计低通预处理
+    float clean_ax = LPF_Update(&Filter_AccelX, mpu6050_data.ax);
+    float clean_ay = LPF_Update(&Filter_AccelY, mpu6050_data.ay);
+    float clean_az = LPF_Update(&Filter_AccelZ, mpu6050_data.az);
+
     
-	//互补滤波闭环融合
-	//mpu6050_data.pitch = F_Update(&Filter_AccelX, mpu6050_data.pitch_a);
-	//mpu6050_data.row   = F_Update(&Filter_AccelX, mpu6050_data.row_a);
-    mpu6050_data.yaw  += mpu6050_data.gz * 0.005f;// Yaw 绕垂直地面的 Z 轴旋转 -> 累加 gz
+    mpu6050_data.pitch   = CF_Update(&pitch, -clean_ax, clean_az, mpu6050_data.gy);
+    mpu6050_data.pitch_g = pitch.gyro_rate; // 俯仰角速度，供直立环 PID 的 D 项使用
+
+    mpu6050_data.row     = CF_Update(&row,   clean_ay, clean_az, mpu6050_data.gx);
+    mpu6050_data.row_g   = row.gyro_rate;  // 横滚角速度
+
+    //Yaw 航向角积分（加入 ±0.15 °/s 死区，抑制静止温漂）
+    if (mpu6050_data.gz > 0.15f || mpu6050_data.gz < -0.15f)
+    {
+        mpu6050_data.yaw += mpu6050_data.gz * 0.005f;
+    }
 }

@@ -7,5 +7,6 @@
 
 void app_Tasks_Init(void);
 void app_task_VOFA_Plus(void);
+void app_task_LED1_TOGGLE(void);
 #endif 
 

@@ -8,30 +8,39 @@
 #endif
 
 /**
-  * @brief 工业级通用一阶低通+限幅滤波器结构体 (面向对象封装)
+  * @brief 一阶低通 + 防死锁限幅滤波器结构体
   */
 typedef struct {
+    uint8_t err_cnt;      // 连续超限计数器 (防止真实阶跃时滤波器死锁)
+    float max_step;       // 限幅滤波阈值 (0.0f 表示关闭限幅)
+    float last_raw;       // 上一次合法的原始值
+    
     float alpha;          // 一阶低通滤波系数 (0.0f ~ 1.0f)
-    float max_step;       // 限幅滤波阈值 (0.0f 表示关闭限幅，>0 表示允许的最大单次跳变)
-    float last_raw;       // 上一次合法的原始值 (用于限幅对比)
     float output;         // 当前滤波后的平滑输出值
-    uint8_t is_first;     // 首次运行标志位 (消除开机从0缓慢爬升的滞后)
+    uint8_t is_first;     // 首次运行标志位
+    
 } LPF_Filter_t;
 
-/* ---------------- 核心 API 接口 ---------------- */
+/**
+  * @brief一阶互补滤波器结构体
+  */
+typedef struct {
+    float alpha;          // 陀螺仪权重系数 (5ms下推荐 0.985f ~ 0.992f)
+    float dt;             // 采样周期 (0.005f)
+    float angle;          // 融合后的最优倾角 (deg)
+    float gyro_rate;      // 对应轴角速度 (deg/s，直接供直立环 D 项使用)
+    uint8_t is_first;     // 首帧对齐标志位
+} CompFilter_t;
 
-// 方式1：直接用 alpha 系数初始化（适合快速盲调）
-void F_Init_Alpha(LPF_Filter_t *filter, float alpha, float max_step);
+extern CompFilter_t pitch;
+extern CompFilter_t row;
+extern LPF_Filter_t Filter_AccelX;
+extern LPF_Filter_t Filter_AccelY;
+extern LPF_Filter_t Filter_AccelZ;
 
-// 方式2：按物理截止频率(Hz)和采样周期(s)初始化（平衡小车MPU6050强烈推荐！）
-void F_Init_Freq(LPF_Filter_t *filter, float cutoff_freq_hz, float sample_time_s, float max_step);
 
-// 核心更新函数：传入原始数据，返回滤波后数据
-float F_Update(LPF_Filter_t *filter, float raw_input);
+void Filter_Init(void);
+float LPF_Update(LPF_Filter_t *f, float raw_input);
+float CF_Update(CompFilter_t *cf, float acc_hor, float acc_z, float gyro_rate);
 
-// 状态复位函数：小车倒地保护停机再扶起时，清空历史记忆
-void F_Reset(LPF_Filter_t *filter);
-
-void Balance_Car_Filter_Init(void);
-
-#endif /* FILTER_H */
+#endif /* __FILTER_H */

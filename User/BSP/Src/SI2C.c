@@ -5,7 +5,7 @@
  * Phone     : 199 5063 9665
  *
  * Version   : V1.0.0
- * Updated   : 2026-11-12
+ * Updated   : 2026-11-18
  *
  * Description:软件 I2C 总线驱动，支持单字节与多字节读写
  *   
@@ -17,7 +17,10 @@
 #include"Delay.h"
 
 /* 软件 I2C 实现核心机制：SCL 低电平期间切换 SDA，SCL 高电平期间保持并采样 SDA */
-// 封装引脚，这里为开漏输出高电平靠外部上拉电阻
+// SDA 引脚配置为推挽输出（无外接上拉时保证驱动能力），需要让从机接管总线时切换为上拉输入
+#define SDA_OUT()      do { GPIOB->CRH = (GPIOB->CRH & 0x0FFFFFFFu) | (0x3u << 28); } while (0)  /* PB15 推挽输出 50MHz */
+#define SDA_IN()       do { GPIOB->CRH = (GPIOB->CRH & 0x0FFFFFFFu) | (0x8u << 28); } while (0)  /* PB15 上拉输入，ODR=1 时上拉 */
+
 #define SDA_RELEASE()  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_SET)
 #define SDA_L()        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_15, GPIO_PIN_RESET)
 #define SDA_READ()     HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_15)
@@ -31,12 +34,19 @@
  */
 static uint8_t SI2C_Start(void)
 {
-    SDA_RELEASE();          // 先释放 SDA
+    SDA_OUT();
+    SDA_RELEASE();          // ODR=1，保证切到输入后为内部上拉
     Delay_us(2);
+    SDA_IN();               // 释放 SDA，让从机可以拉低总线
     SCL_RELEASE();          // 释放 SCL，拉高
     Delay_us(5);            // 等待总线稳定
 
-    if (!SDA_READ())  return 1;  // 检测 SDA 是否被持续拉低，若低说明总线被占死
+    if (!SDA_READ())        // 检测 SDA 是否被持续拉低，若低说明总线被占死
+    {
+        SDA_OUT();
+        return 1;
+    }
+    SDA_OUT();
 
     SDA_L();                // SCL 为高时拉低 SDA，产生 Start 条件
     Delay_us(5);
@@ -51,6 +61,7 @@ static uint8_t SI2C_Start(void)
  */
 static void SI2C_Stop(void)
 {
+    SDA_OUT();
     SDA_L();                // 确保 SDA 为低
     Delay_us(2);
     SCL_RELEASE();          // 释放 SCL（拉高）
@@ -61,11 +72,35 @@ static void SI2C_Stop(void)
 }
 
 /**
+ * @brief  总线恢复：从机把 SDA 拉死（例如 MCU 在传输中途复位）时，补 9 个时钟再发 STOP
+ */
+void SI2C_BusRecover(void)
+{
+    SDA_OUT();
+    SDA_RELEASE();
+    SDA_IN();               // 释放 SDA，靠内部上拉
+    SCL_L();
+    Delay_us(5);
+
+    for (uint8_t i = 0; i < 9 && SDA_READ() == GPIO_PIN_RESET; i++)
+    {
+        SCL_RELEASE();
+        Delay_us(5);
+        SCL_L();
+        Delay_us(5);
+    }
+
+    SDA_OUT();
+    SI2C_Stop();
+}
+
+/**
  * @brief  发送一个字节（高位在前）
  * @param  byte：要发送的 8 位数据
  */
 static void SI2C_SendByte(uint8_t byte)
 {
+    SDA_OUT();
     for (int i = 0; i < 8; i++)
     {
         if (byte & (0x80 >> i))
@@ -87,6 +122,7 @@ static void SI2C_SendByte(uint8_t byte)
  */
 static void SI2C_SendAck(void)
 {
+    SDA_OUT();
     SDA_L();                // 主机拉低 SDA 表示 ACK
     Delay_us(2);
 
@@ -105,6 +141,7 @@ static void SI2C_SendAck(void)
  */
 static void SI2C_SendNack(void)
 {
+    SDA_OUT();
     SDA_RELEASE();          // 主机释放 SDA（高电平）表示 NACK
     Delay_us(2);
 
@@ -123,7 +160,8 @@ static uint8_t SI2C_WaitAck(void)
 {
     uint16_t time_out = 1000;
 
-    SDA_RELEASE();          // 主机释放 SDA，交由从机控制
+    SDA_RELEASE();          // ODR=1，保证切到输入后为内部上拉
+    SDA_IN();               // 切换为输入，把 SDA 真正交给从机应答
     Delay_us(2);
 
     SCL_RELEASE();          // 拉高 SCL 准备采样
@@ -134,7 +172,7 @@ static uint8_t SI2C_WaitAck(void)
         if (--time_out == 0)
         {
             SCL_L();
-            SI2C_Stop();    // 超时释放总线
+            SI2C_Stop();    // 超时释放总线（Stop 内部会切回推挽）
             return 1;
         }
         Delay_us(1);
@@ -142,6 +180,7 @@ static uint8_t SI2C_WaitAck(void)
 
     SCL_L();                // 采样完毕，拉低 SCL
     Delay_us(5);
+    SDA_OUT();              // 恢复推挽输出，准备后续发送
     return 0;
 }
 
@@ -153,7 +192,8 @@ static uint8_t SI2C_ReceiveByte(void)
 {
     uint8_t data = 0x00;
 
-    SDA_RELEASE();          // 释放 SDA，等待从机发送数据
+    SDA_RELEASE();          // ODR=1，保证切到输入后为内部上拉
+    SDA_IN();               // 切换为输入，释放 SDA 由从机驱动数据位
 
     for (int i = 0; i < 8; i++)
     {

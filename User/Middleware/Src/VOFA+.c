@@ -1,104 +1,96 @@
-/************************************************
- * Developer : Gonk
- * GitHub    : https://github.com/mengfeiguo0316-sys
- * Email     : mengfeiguo0316@gmail.com or 2250513147@qq.com
- * Phone     : 199 5063 9665
- *
- * Version   : V1.0.0
- * Updated   : 2026-11-12
- *
- * Description:VOFA+可视化数据发送模块，支持 FireWater 与 JustFloat 格式
- *   
- * Copyright (c) 2026 Gonk
- * All rights reserved.
- ************************************************/
-
 #include "VOFA+.h"
 
 #if VOFA_PLUS_ENABLE
 
 #include "usart.h"
-#include <stdio.h>
-#include <string.h>
-
-/* 绑定底层串口句柄（也可后续替换为 bsp_uart 接口） */
-#define VOFA_UART_HANDLE  huart1
-
-/* VOFA+ 内部发送缓冲区 */
+#include"stdio.h"
+#include"string.h"
+#define VOFA_UART_HANDLE        huart1  
+// VOFA+ 数据发送缓冲区
 static uint8_t vofa_send_buf[VOFA_SEND_BUF_MAX_LEN] = {0};
 
+/**
+ * @brief  VOFA+ 初始化
+ * @note   清空发送缓冲区，通常在 main.c 中调用
+ */
 void VOFA_Plus_Init(void)
 {
     memset(vofa_send_buf, 0, sizeof(vofa_send_buf));
 }
 
 /**
- * @brief 通用多通道浮点数据打包函数
- * @param channels: 浮点数据数组指针（不论是欧拉角还是电机转速，拼成数组传进来即可）
- * @param ch_num:   通道数量（float 元素个数）
- * @param send_buf: 输出字节缓冲区
- * @param buf_len:  缓冲区最大长度
- * @retval 实际打包的字节长度，失败返回 0
+ * @brief VOFA+ 打包数据（支持 FireWater 或 RawData 模式）
+ * @param vofa_data: 待发送的数据结构体指针
+ * @param send_buf: 输出缓冲区
+ * @param buf_len: 缓冲区长度
+ * @retval 打包后的数据长度，失败返回 0
  */
-uint16_t VOFA_Plus_PackData(const float *channels, uint8_t ch_num, uint8_t *send_buf, uint16_t buf_len)
+uint16_t VOFA_Plus_PackData(VOFA_Data_t *vofa_data, uint8_t *send_buf, uint16_t buf_len)
 {
-    if (channels == NULL || send_buf == NULL || ch_num == 0 || ch_num > VOFA_MAX_CHANNELS)
-    {
-        return 0;
-    }
-
-#if (VOFA_PROTOCOL == 1) /* FireWater 模式：格式化为 "ch0,ch1,ch2\r\n" */
-    uint16_t offset = 0;
-
-    for (uint8_t i = 0; i < ch_num; i++)
-    {
-        // 最后一个数据后面加 "\r\n"，其余数据后面加 ","
-        const char *fmt = (i == (ch_num - 1)) ? "%.2f\r\n" : "%.2f,";
-        int ret = snprintf((char *)(send_buf + offset), buf_len - offset, fmt, channels[i]);
-
-        if (ret < 0 || (offset + ret) >= buf_len)
-        {
-            return 0; // 缓冲区空间不足，防溢出保护
-        }
-        offset += (uint16_t)ret;
-    }
-    return offset;
-
-#elif (VOFA_PROTOCOL == 2) /* JustFloat 模式：N 个 float 二进制流 + 4字节帧尾 */
-    uint16_t data_bytes = ch_num * sizeof(float);
-    if (buf_len < (data_bytes + 4))
+    if (buf_len < sizeof(VOFA_Data_t))
     {
         return 0; // 缓冲区过小
     }
 
-    const uint8_t tail[4] = {0x00, 0x00, 0x80, 0x7F};
+#if VOFA_PROTOCOL == 1 // FireWater 模式
+    // 检查缓冲区是否足够容纳格式化字符串（至少 32 字节）
+    if (buf_len < 32)
+    {
+        return 0; // 缓冲区过小
+    }
 
-    // 1. 直接内存拷贝 N 个 float
-    memcpy(send_buf, channels, data_bytes);
-    // 2. 追加 JustFloat 标准帧尾
-    memcpy(send_buf + data_bytes, tail, 4);
+    // FireWater 模式：按指定格式输出文本，例如 "x:100.0,y:95.5,z:20.0\r\n"
+    uint16_t len = snprintf((char *)send_buf, buf_len, "%.1f,%.1f,%.1f\r\n",
+                            vofa_data->pitch,
+                            vofa_data->row,
+                            vofa_data->yaw);
+    return len; // 返回实际写入长度
 
-    return (data_bytes + 4);
+#elif VOFA_PROTOCOL == 2 // RawData 模式
 
-#else
-    return 0;
+    // RawData 模式：直接发送二进制数据，需确保缓冲区足够存放 4 个 float
+    if (buf_len < 16)
+    {             // 4 个 float 共 16 字节
+        return 0; // 缓冲区过小
+    }
+    // 依次拷贝各个 float 数据到发送缓冲区
+    memcpy(send_buf, &vofa_data->target_rpm, sizeof(float));                       // 目标转速
+    memcpy(send_buf + sizeof(float), &vofa_data->actual_rpm, sizeof(float));       // 实际转速
+    memcpy(send_buf + sizeof(float) * 2, &vofa_data->pid_output, sizeof(float));   // PID 输出
+    memcpy(send_buf + sizeof(float) * 3, &vofa_data->final_output, sizeof(float)); // 最终输出（含补偿）
+    return sizeof(VOFA_Data_t);                                                    // 返回总数据长度
+#else                    // 默认使用 RawData 模式
+    return 0; // 不支持的协议
 #endif
 }
 
 /**
- * @brief 通用多通道数据发送函数
- * @param channels: 浮点数据数组指针
- * @param ch_num:   通道数量
+ * @brief  VOFA+ 发送数据（通过串口）
+ * @note   此函数会调用打包函数，然后通过 HAL_UART_Transmit 发送，超时 10ms
+ *         通常在 speed_loop.c 等控制循环中调用
  */
-void VOFA_Plus_SendData(const float *channels, uint8_t ch_num)
+void VOFA_Plus_SendData(VOFA_Data_t *data)
 {
-    uint16_t data_len = VOFA_Plus_PackData(channels, ch_num, vofa_send_buf, VOFA_SEND_BUF_MAX_LEN);
-    if (data_len == 0)
+    if (data == NULL)
     {
-        return;
+        return; // 空指针检查
     }
 
-    HAL_UART_Transmit_DMA(&VOFA_UART_HANDLE, vofa_send_buf, data_len);
+    // 调用打包函数获取数据长度
+    uint16_t data_len = VOFA_Plus_PackData(data, vofa_send_buf, VOFA_SEND_BUF_MAX_LEN);
+    if (data_len == 0) return; // 打包失败则退出
+
+    // 通过串口发送数据
+    HAL_UART_Transmit(&VOFA_UART_HANDLE, vofa_send_buf, data_len, 10); // 超时 10ms
 }
 
-#endif /* VOFA_PLUS_ENABLE */
+/**
+ * @brief  从 MPU6050 获取调试数据并通过 VOFA+ 发送
+ * @note   此函数在 MPU6050.c 中调用，用于发送姿态数据（俯仰、横滚、偏航）
+ */
+void VOFA_Plus_SendMPU6050Data(void)
+{
+    VOFA_Data_t vofa_data = MPU6050_GetDebugData();
+    VOFA_Plus_SendData(&vofa_data);
+}
+#endif
