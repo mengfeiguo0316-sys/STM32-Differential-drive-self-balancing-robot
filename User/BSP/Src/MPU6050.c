@@ -15,6 +15,7 @@
 
 #include "MPU6050.h"
 #include "SI2C.h"
+#include "Filter.h"
 
 // 实际情况决定
 #define MPU6050_ADDR        0x68
@@ -41,40 +42,47 @@ static void MPU6050_ReadRawData(int16_t *accel, int16_t *gyro);
 uint8_t MPU6050_Init(void)
 {
     uint8_t data;
+    uint8_t dummy_buf[14];
 
-    SI2C_BusRecover();                  // 防止上次复位时总线被从机拉死
+    SI2C_BusRecover();
 
     if (SI2C_Read(MPU6050_ADDR, WHO_AM_I, &data))
         return 0;
 
-    /* WHO_AM_I：MPU6050/MPU6000=0x68，MPU6500=0x70，MPU9250=0x71，MPU9255=0x73
-       市售大量 "MPU6050" 模块实际贴的是 MPU6500，基础寄存器与量程换算完全兼容 */
     if (data != 0x68 && data != 0x70 && data != 0x71 && data != 0x73)
         return 0;
 
     if (SI2C_Write(MPU6050_ADDR, PWR_MGMT_1, 0x01))
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, CONFIG, 0x03))
+    // 【新增1】热重启保护：先关闭 MPU6050 中断输出，防止校准期间干扰
+    if (SI2C_Write(MPU6050_ADDR, INT_ENABLE, 0x00))
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, SMPLRT_DIV, 0x04))
+    if (SI2C_Write(MPU6050_ADDR, CONFIG, 0x03))       // 42Hz DLPF，基准 1kHz
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, GYRO_CONFIG, 0x18))
+    if (SI2C_Write(MPU6050_ADDR, SMPLRT_DIV, 0x04))   // 200Hz (5ms)
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, ACCEL_CONFIG, 0x00))
+    if (SI2C_Write(MPU6050_ADDR, GYRO_CONFIG, 0x18))  // ±2000°/s
+        return 0;
+
+    if (SI2C_Write(MPU6050_ADDR, ACCEL_CONFIG, 0x00)) // ±2g
         return 0;
 
     HAL_Delay(50);
 
-    MPU6050_Calibrate();
+    MPU6050_Calibrate();      // 校准零偏
+    Filter_Init();    // 【新增2】初始化低通与互补滤波器（之前漏掉了！）
 
-    if (SI2C_Write(MPU6050_ADDR, INT_PIN_CFG, 0x10))
+    if (SI2C_Write(MPU6050_ADDR, INT_PIN_CFG, 0x10))  // 高电平脉冲，读操作清中断
         return 0;
 
-    if (SI2C_Write(MPU6050_ADDR, INT_ENABLE, 0x01))
+    // 【新增3】在开启中断前，先读一次 0x3B 清除芯片内部残留的旧中断标志，确保 INT 引脚处于低电平！
+    SI2C_ReadBytes(MPU6050_ADDR, 0x3B, dummy_buf, 14);
+
+    if (SI2C_Write(MPU6050_ADDR, INT_ENABLE, 0x01))   // 正式开启 200Hz 中断
         return 0;
 
     return 1;
@@ -89,7 +97,7 @@ static void MPU6050_Calibrate(void)
     int32_t sum_gx = 0;
     int32_t sum_gy = 0;
     int32_t sum_gz = 0;
-    const uint16_t samples = 200; // 采集 200 次求平均
+    const uint16_t samples = 500; // 采集 500 次求平均
 
     int16_t temp_accel[3];
     int16_t temp_gyro[3];
@@ -165,6 +173,8 @@ void MPU6050_GetPhysical(void)
     mpu6050_data.gy = ((float)raw_gy - mpu6050_data.Gyro_Offset_Y) / 16.4f;
     mpu6050_data.gz = ((float)raw_gz - mpu6050_data.Gyro_Offset_Z) / 16.4f;
 }
+
+
 
 MPU6050_Data_t  MPU6050_GetDebugData(void)
 {

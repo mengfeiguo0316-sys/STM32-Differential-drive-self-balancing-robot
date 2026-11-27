@@ -1,5 +1,5 @@
-#ifndef __BSP_KEY_H
-#define __BSP_KEY_H
+#ifndef __KEY_H
+#define __KEY_H
 
 #include <stdint.h>
 
