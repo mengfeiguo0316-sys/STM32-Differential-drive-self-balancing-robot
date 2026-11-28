@@ -103,7 +103,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    app_task_VOFA_Plus();
+    app_task_LED1_TOGGLE();
+    //app_task_VOFA_Plus();
+    app_task_Motor_Control();
   }
   /* USER CODE END 3 */
 }

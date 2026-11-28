@@ -20,7 +20,6 @@ CompFilter_t row;
  * @param  cf : 一阶互补滤波器结构体指针
  * @param  alpha : 陀螺仪权重系数 (5ms下推荐 0.985f ~ 0.992f)
  * @param  dt : 采样周期 
- * @retval 融合后的最优倾角 (deg)
  */
 static void C_Init(CompFilter_t *cf, float alpha, float dt)
 {
