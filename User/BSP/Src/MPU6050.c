@@ -97,7 +97,7 @@ static void MPU6050_Calibrate(void)
     int32_t sum_gx = 0;
     int32_t sum_gy = 0;
     int32_t sum_gz = 0;
-    const uint16_t samples = 500; // 采集 500 次求平均
+    const uint16_t samples = 400; // 采集 400 次求平均
 
     int16_t temp_accel[3];
     int16_t temp_gyro[3];
